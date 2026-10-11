@@ -25,3 +25,8 @@ def test_newly_passing_delta():
 def test_pass_rate():
     assert GradeResult(passed=5, total=25).pass_rate == 0.2
     assert GradeResult().pass_rate == 0.0
+
+
+def test_errors_counted():
+    r = GradeResult(passed=0, total=25, per_ac={"AC-01": "error", "AC-02": "failed", "AC-03": "passed"})
+    assert r.errors == 1

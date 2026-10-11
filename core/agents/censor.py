@@ -72,7 +72,11 @@ class Censor(AgentBase):
         dependents_blocked = coll(TICKETS).count_documents(
             {"run_id": self.run_id, "status": "blocked", "deps": ticket["_id"]}
         )
-        accepted = not regressions and bool(
+        # a tree that ERRORS more tests than the accepted baseline is broken,
+        # no matter how harmless it looks against a zero baseline
+        baseline_errors = baseline.errors if baseline else 0
+        healthy = result.errors <= baseline_errors
+        accepted = healthy and not regressions and bool(
             newly
             or infrastructure
             or len(refs_passing) == len(ac_refs)
@@ -98,6 +102,8 @@ class Censor(AgentBase):
         else:
             failing_refs = {ac: result.per_ac.get(ac, "missing") for ac in ac_refs}
             verdict_doc["feedback"] = (
+                f"Tree health: {result.errors} tests ERROR (baseline {baseline_errors}) — "
+                f"an erroring suite usually means your files broke an import or fixture. "
                 f"Regressions: {regressions or 'none'}. Your ACs: {failing_refs}. "
                 f"Overall {result.passed}/{result.total}. stderr tail: {result.stderr_tail[-500:]}"
             )

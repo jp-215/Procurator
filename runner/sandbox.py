@@ -28,6 +28,11 @@ class GradeResult:
     stderr_tail: str = ""
 
     @property
+    def errors(self) -> int:
+        """Tests that ERRORED (import/fixture crashes) — a broken tree, not failures."""
+        return sum(1 for v in self.per_ac.values() if v not in ("passed", "failed"))
+
+    @property
     def pass_rate(self) -> float:
         return self.passed / self.total if self.total else 0.0
 

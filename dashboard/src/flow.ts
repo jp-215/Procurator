@@ -87,6 +87,9 @@ export async function refreshFlowCounts() {
   set("db-signal", `metrics <b>${c.metrics}</b> · verdicts <b>${c.verdicts}</b><br>artifacts <b>${c.artifacts}</b>`);
   set("bus", `run <b>${d.run_id}</b>`);
   set("censor", `gate: <b>${d.pass.passed}/${d.pass.total || "–"}</b>`);
+  if (d.governor && d.governor.width) {
+    set("procurator", `governor: W<b>${d.governor.width}</b> · depth <b>${(d.governor.depth_tokens / 1000).toFixed(0)}k</b><br><span style="color:var(--text-muted)">${(d.governor.reason ?? "").slice(0, 46)}</span>`);
+  }
   set("quaestor", `<b>${(d.tokens / 1000).toFixed(1)}k</b> tokens`);
 }
 

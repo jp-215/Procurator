@@ -40,7 +40,7 @@ def _class_has_rejects(ticket: dict[str, Any]) -> bool:
     return bool(tids) and coll(VERDICTS).count_documents({"ticket_id": {"$in": tids}, "accepted": False}) > 0
 
 
-def recall_for_ticket(run_id: str, ticket: dict[str, Any]) -> tuple[str, int]:
+def recall_for_ticket(run_id: str, ticket: dict[str, Any], force: bool = False) -> tuple[str, int]:
     """Returns (context_block, hit_count).
 
     Targeted economics: memory is injected as insurance, not as a flat tax —
@@ -49,7 +49,7 @@ def recall_for_ticket(run_id: str, ticket: dict[str, Any]) -> tuple[str, int]:
     """
     if not config().memory_enabled:
         return "", 0
-    if ticket.get("sprint", 0) == 0 and not _class_has_rejects(ticket):
+    if not force and ticket.get("sprint", 0) == 0 and not _class_has_rejects(ticket):
         return "", 0
 
     parts: list[str] = []

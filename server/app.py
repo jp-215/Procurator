@@ -114,8 +114,10 @@ def flow(run: str | None = None):
     counts["playbooks_all"] = coll(PLAYBOOKS).count_documents({})
     counts["metrics"] = coll(METRICS).count_documents({"meta.run_id": r})
     passed, total = latest_pass_rate(r)
+    gov = clean(coll("governor").find_one({"run_id": r}) or {})
+    last_dispatch = clean(coll(DISPATCH_LOG).find_one({"run_id": r}, sort=[("created_at", -1)]) or {})
     return {"run_id": r, "counts": counts, "pass": {"passed": passed, "total": total},
-            "tokens": tokens_spent(r)}
+            "tokens": tokens_spent(r), "governor": gov, "last_dispatch": last_dispatch}
 
 
 @app.get("/api/metrics/series")

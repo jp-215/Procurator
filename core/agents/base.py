@@ -44,6 +44,16 @@ class AgentBase:
             upsert=True,
         )
 
+    def role_guidance(self) -> str:
+        """Latest self-written playbook for this role — recursive harnessing:
+        the mesh patches its own agents' instructions from metric signals."""
+        if not self.cfg.memory_enabled:
+            return ""
+        from core.db import PLAYBOOKS
+
+        pb = coll(PLAYBOOKS).find_one({"ticket_class": f"role:{self.role}"}, sort=[("version", -1)])
+        return f"\n\nSELF-IMPROVEMENT NOTE (from your own retro, v{pb['version']}): {pb['text']}" if pb else ""
+
     def log(self, kind: str, text: str, **data: Any) -> None:
         """L0 event. TTL'd; compacted by Scriba; streamed to the dashboard."""
         coll(EVENTS).insert_one({

@@ -41,7 +41,7 @@ class Legatus(AgentBase):
                           "for the newest scope-change section; 1-3 tickets, each touching the "
                           "minimum set of modules. Preserving existing behavior is part of done.")
         tickets = ask_json(
-            self.agent_id, SYSTEM + delta_note, f"Spec:\n\n{spec}",
+            self.agent_id, SYSTEM + delta_note + self.role_guidance(), f"Spec:\n\n{spec}",
             model=self.cfg.procurator_model, sprint=self.sprint, max_tokens=4096,
         )
         if isinstance(tickets, dict):  # model wrapped the list in an object

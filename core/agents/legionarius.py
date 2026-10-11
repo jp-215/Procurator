@@ -14,6 +14,7 @@ from core.agents.base import AgentBase, now
 from core.claims import claim_next, complete, renew_lease
 from core.db import ARTIFACTS, VERDICTS, coll
 from core.llm import BudgetExhausted, ask
+from core.governor import ladder_rung, read as governor_read
 from core.memory.recall import recall_for_ticket
 
 from core.paths import spec_path, target_src
@@ -49,7 +50,7 @@ def parse_files(text: str) -> tuple[dict[str, str], str]:
 class Legionarius(AgentBase):
     role = "legionarius"
 
-    def _context_for(self, ticket: dict[str, Any]) -> tuple[str, int]:
+    def _context_for(self, ticket: dict[str, Any], memory_mode: str = "targeted") -> tuple[str, int]:
         spec = spec_path().read_text()
         module = ticket["module"]
         current = ""
@@ -60,7 +61,7 @@ class Legionarius(AgentBase):
         v = coll(VERDICTS).find_one({"ticket_id": ticket["_id"], "accepted": False}, sort=[("created_at", -1)])
         if v:
             feedback = f"\n\nPREVIOUS ATTEMPT REJECTED:\n{v.get('feedback', '')}"
-        memory, hits = recall_for_ticket(self.run_id, ticket)
+        memory, hits = recall_for_ticket(self.run_id, ticket, force=(memory_mode == "full"))
         return (
             f"TICKET: {ticket['title']}\nModule: {module}\nACs: {', '.join(ticket['ac_refs'])}\n"
             f"Description: {ticket['description']}\n\nSPEC:\n{spec}\n\nCURRENT FILES:{current}"
@@ -83,11 +84,18 @@ class Legionarius(AgentBase):
         threading.Thread(target=_renew, daemon=True).start()
 
         try:
-            prompt, hits = self._context_for(ticket)
+            rung = ladder_rung(ticket.get("attempts", 0))
+            gov = governor_read(self.run_id)
+            depth = gov["depth_tokens"] * rung["depth_mult"]
+            model = self.cfg.procurator_model if rung["model"] == "procurator" else self.cfg.worker_model
+            prompt, hits = self._context_for(ticket, memory_mode=rung["memory"])
+            self.log("dispatch", f"attempt {ticket.get('attempts', 0)} rung: "
+                     f"{rung['model']} depth={depth} memory={rung['memory']}",
+                     ticket_id=str(ticket["_id"]))
             text = ask(
-                self.agent_id, SYSTEM, prompt,
+                self.agent_id, SYSTEM + self.role_guidance(), prompt, model=model,
                 sprint=self.sprint, ticket=str(ticket["_id"]),
-                retrieval_hits=hits, max_tokens=8192,
+                retrieval_hits=hits, max_tokens=depth,
             )
             raw_files, notes = parse_files(text)
             files = {
@@ -115,6 +123,31 @@ class Legionarius(AgentBase):
             self.heartbeat("idle")
         return True
 
+    def _wait_for_work(self, timeout: float = 15.0) -> None:
+        """Block until a ticket changes (change stream) or timeout (fallback)."""
+        import queue
+
+        q: queue.Queue = queue.Queue(maxsize=1)
+
+        def _watch():
+            from core.bus import watch
+            from core.db import TICKETS as _T
+
+            for _ in watch(_T, [{"$match": {"operationType": {"$in": ["insert", "update", "replace"]}}}]):
+                try:
+                    q.put_nowait(1)
+                except queue.Full:
+                    pass
+                return
+
+        if not hasattr(self, "_waker") or not self._waker.is_alive():
+            self._waker = threading.Thread(target=_watch, daemon=True)
+            self._waker.start()
+        try:
+            q.get(timeout=timeout)
+        except queue.Empty:
+            pass
+
     def run_forever(self, poll_seconds: float = 3.0) -> None:
         self.register()
         self.log("agent.start", "reporting for duty")
@@ -122,7 +155,7 @@ class Legionarius(AgentBase):
             try:
                 if not self.work_one():
                     self.heartbeat("idle")
-                    time.sleep(poll_seconds)
+                    self._wait_for_work()
             except BudgetExhausted:
                 self.log("agent.halt", "budget exhausted")
                 return

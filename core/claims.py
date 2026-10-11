@@ -35,7 +35,14 @@ def refresh_frontier(run_id: str) -> int:
 
 
 def claim_next(run_id: str, worker_id: str) -> dict[str, Any] | None:
-    """Atomically claim the highest-priority ready ticket. None if none ready."""
+    """Atomically claim the highest-priority ready ticket. None if none ready
+    or the Governor's width gate is saturated."""
+    from core.governor import read as governor_read
+
+    width = governor_read(run_id)["width"]
+    in_flight = coll(TICKETS).count_documents({"run_id": run_id, "status": "claimed"})
+    if in_flight >= width:
+        return None  # width gate: recheck after a worker finishes
     lease = now() + timedelta(seconds=config().lease_seconds)
     return coll(TICKETS).find_one_and_update(
         {"run_id": run_id, "status": "ready"},

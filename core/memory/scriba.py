@@ -118,5 +118,43 @@ class Scriba(AgentBase):
                 "text": text.strip(), "stats": stats, "created_at": now(),
             })
             made += 1
+        made += self._role_retro(sprint)
         self.log("retro.done", f"{made} playbooks updated")
+        return made
+
+    ROLE_SIGNALS = {
+        "legatus": "tickets that advanced zero tests (over-decomposition), reject rates, dep structure",
+        "legionarius": "parse failures (ticket.error events), attempts needed per ticket",
+        "censor": "rejects later overturned on retry, feedback usefulness",
+    }
+
+    ROLE_PROMPT = """You are Scriba reviewing the {role} agent's own performance this
+sprint from hard signals. Write <=60 words of guidance that agent should follow next
+sprint to waste fewer tokens and fewer attempts. Imperative voice. If performance was
+clean, reinforce what worked. Signals to consider: {signals}"""
+
+    def _role_retro(self, sprint: int) -> int:
+        from core.db import EVENTS, TICKETS
+
+        made = 0
+        for role, signals in self.ROLE_SIGNALS.items():
+            tks = list(coll(TICKETS).find({"run_id": self.run_id, "sprint": sprint}))
+            errors = coll(EVENTS).count_documents(
+                {"run_id": self.run_id, "sprint": sprint, "kind": "ticket.error"})
+            vs = list(coll(VERDICTS).find({"run_id": self.run_id, "sprint": sprint}))
+            zero_gain = sum(1 for v in vs if v["accepted"] and not v.get("newly_passing"))
+            stats = (f"tickets={len(tks)}, verdicts={len(vs)}, "
+                     f"rejects={sum(1 for v in vs if not v['accepted'])}, "
+                     f"zero_gain_accepts={zero_gain}, worker_errors={errors}, "
+                     f"attempts={[t.get('attempts', 0) for t in tks]}")
+            text = ask(self.agent_id, self.ROLE_PROMPT.format(role=role, signals=signals),
+                       f"Sprint stats: {stats}", sprint=sprint, max_tokens=150)
+            klass = f"role:{role}"
+            prev = coll(PLAYBOOKS).find_one({"ticket_class": klass}, sort=[("version", -1)])
+            coll(PLAYBOOKS).insert_one({
+                "run_id": self.run_id, "ticket_class": klass,
+                "version": (prev["version"] + 1 if prev else 1),
+                "text": text.strip(), "stats": stats, "created_at": now(),
+            })
+            made += 1
         return made

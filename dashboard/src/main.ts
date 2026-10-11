@@ -22,6 +22,7 @@ app.innerHTML = `
     <div id="bottom-tabs">
       <div class="tab active" data-b="events">Events</div>
       <div class="tab" data-b="metrics">Metrics</div>
+      <div class="tab" data-b="standups">Standups</div>
       <div class="tab" data-b="problems">Problems</div>
     </div>
     <div id="bottom-content"></div>
@@ -164,6 +165,11 @@ async function renderBottom() {
     renderMetrics(el, await getSeries(), state);
     const runs = await fetch("/api/ablation").then(r => r.json()).catch(() => []);
     renderAblation(el.querySelector("#metrics-wrap")!, runs);
+  }
+  if (bottomTab === "standups") {
+    const sus = events.filter(e => (e.kind ?? "").startsWith("standup") || e.kind === "route.bump" || e.kind === "dispatch");
+    el.innerHTML = sus.map(evLine).join("") || `<div style="color:var(--text-muted)">no standups yet</div>`;
+    el.scrollTop = el.scrollHeight;
   }
   if (bottomTab === "problems") {
     const probs = events.filter(e => /reject|error|halt|reaper/.test(e.kind ?? ""));
