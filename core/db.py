@@ -21,6 +21,7 @@ TICKETS = "tickets"
 AGENTS = "agents"
 DISPATCH_LOG = "dispatch_log"
 STAKEHOLDER_MSGS = "stakeholder_msgs"
+RUNS = "runs"
 
 # Memory tiers
 EVENTS = "events"          # L0 raw transcript (TTL)
@@ -35,7 +36,7 @@ ARTIFACTS = "artifacts"
 VERDICTS = "verdicts"
 
 ALL_COLLECTIONS = [
-    MANDATE, SPRINTS, TICKETS, AGENTS, DISPATCH_LOG, STAKEHOLDER_MSGS,
+    MANDATE, SPRINTS, TICKETS, AGENTS, DISPATCH_LOG, STAKEHOLDER_MSGS, RUNS,
     EVENTS, EPISODES, MEMORY, DECISIONS, PLAYBOOKS,
     METRICS, ARTIFACTS, VERDICTS,
 ]

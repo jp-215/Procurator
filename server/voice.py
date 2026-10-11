@@ -25,6 +25,7 @@ from core.db import EVENTS, STAKEHOLDER_MSGS, TICKETS, coll
 from core.llm import ask
 from core.memory.recall import recall_for_ticket
 from core.metrics import latest_pass_rate, tokens_spent
+from core.runs import current_run_id, launch_headless, reset_workbench, seed_run
 
 router = APIRouter()
 AUDIO_DIR = Path(__file__).resolve().parent / ".audio"
@@ -105,10 +106,11 @@ def audio(name: str):
 @router.post("/voice/incoming")
 async def incoming(CallSid: str = Form(""), From: str = Form("")):
     cfg = config()
-    passed, total = latest_pass_rate(cfg.run_id)
+    run_id = current_run_id()
+    passed, total = latest_pass_rate(run_id)
     greeting = (f"Procurator speaking. The mesh stands at {passed} of {total or 25} "
                 f"acceptance criteria. What do you need?")
-    coll(EVENTS).insert_one({"run_id": cfg.run_id, "sprint": 0, "agent": "procurator",
+    coll(EVENTS).insert_one({"run_id": run_id, "sprint": 0, "agent": "procurator",
                              "kind": "voice.call", "text": f"inbound call from {From}",
                              "data": {"call_sid": CallSid}, "created_at": _now()})
     return twiml(gather(say_or_play(greeting)))
@@ -117,20 +119,21 @@ async def incoming(CallSid: str = Form(""), From: str = Form("")):
 @router.post("/voice/turn")
 async def turn(CallSid: str = Form(""), From: str = Form(""), SpeechResult: str = Form("")):
     cfg = config()
+    run_id = current_run_id()
     heard = SpeechResult.strip()
     if not heard:
         return twiml(gather(say_or_play("I did not catch that. Say again?")))
 
     # 1) the caller's words land on the bus — the mesh and dashboard see them live
     coll(STAKEHOLDER_MSGS).insert_one({
-        "run_id": cfg.run_id, "from": "stakeholder", "channel": "voice",
+        "run_id": run_id, "from": "stakeholder", "channel": "voice",
         "call_sid": CallSid, "caller": From, "text": heard, "sprint": 0,
         "created_at": _now(),
     })
 
     # 2) PM answers from live state + the memory layer
-    memory, hits = recall_for_ticket(cfg.run_id, {"title": heard, "module": "", "description": heard})
-    prompt = (f"{_state_block(cfg.run_id)}\n{memory}\n\n"
+    memory, hits = recall_for_ticket(run_id, {"title": heard, "module": "", "description": heard})
+    prompt = (f"{_state_block(run_id)}\n{memory}\n\n"
               f"CALL SO FAR:\n{_history(CallSid)}\n\nSTAKEHOLDER JUST SAID: {heard}")
     try:
         answer = ask("procurator-voice", PM_SYSTEM, prompt,
@@ -143,7 +146,7 @@ async def turn(CallSid: str = Form(""), From: str = Form(""), SpeechResult: str 
         answer = cut[:max(cut.rfind(". "), cut.rfind("! "), cut.rfind("? ")) + 1] or cut
 
     coll(STAKEHOLDER_MSGS).insert_one({
-        "run_id": cfg.run_id, "from": "procurator", "channel": "voice",
+        "run_id": run_id, "from": "procurator", "channel": "voice",
         "call_sid": CallSid, "text": answer, "sprint": 0, "created_at": _now(),
     })
     return twiml(gather(say_or_play(answer)))
@@ -163,3 +166,54 @@ def call_stakeholder(summary: str) -> bool:
         twiml=f"<Response>{inner}<Hangup/></Response>",
     )
     return True
+
+
+CLASSIFY = """You are Procurator's intake clerk. Given a phone call transcript
+between the stakeholder and the PM, decide whether the stakeholder wants a
+build to run. RULES:
+- If the stakeholder utters any build directive — start, build, go ahead, make
+  it, proceed, kick it off, run it — should_build is TRUE. Always. A directive
+  means "run it fresh now", even if the PM said earlier work already succeeded.
+- should_build is false ONLY for pure status/questions calls with no directive.
+Respond ONLY with JSON:
+{"should_build": true/false, "directive": "<one-sentence restatement of what they asked for>"}"""
+
+
+def _on_hangup(call_sid: str) -> None:
+    import re as _re
+
+    from core.llm import ask as _ask
+
+    msgs = list(coll(STAKEHOLDER_MSGS).find({"call_sid": call_sid}).sort("created_at", 1))
+    transcript = "\n".join(f"{m['from']}: {m['text']}" for m in msgs)
+    if not transcript.strip():
+        return
+    try:
+        raw = _ask("procurator-intake", CLASSIFY, transcript, max_tokens=200)
+        m = _re.search(r"\{.*\}", raw, _re.DOTALL)
+        verdict = json.loads(m.group(0)) if m else {}
+    except Exception:
+        verdict = {"should_build": True, "directive": "stakeholder call (classifier unavailable)"}
+    if not verdict.get("should_build"):
+        coll(EVENTS).insert_one({"run_id": current_run_id(), "sprint": 0, "agent": "procurator",
+                                 "kind": "voice.hangup", "text": "call ended; no build directive",
+                                 "created_at": _now()})
+        return
+    run_id = f"call-{call_sid[-6:].lower()}"
+    reset_workbench()
+    seed_run(run_id, directive=verdict.get("directive", ""))
+    pid = launch_headless(run_id)
+    coll(EVENTS).insert_one({"run_id": run_id, "sprint": 0, "agent": "procurator",
+                             "kind": "run.launched",
+                             "text": f"headless mesh launched from call (pid {pid}): "
+                                     f"{verdict.get('directive', '')}",
+                             "created_at": _now()})
+
+
+@router.post("/voice/status")
+async def status(CallSid: str = Form(""), CallStatus: str = Form("")):
+    if CallStatus in {"completed", "busy", "no-answer", "canceled"}:
+        import threading
+
+        threading.Thread(target=_on_hangup, args=(CallSid,), daemon=True).start()
+    return Response("", media_type="text/plain")

@@ -9,7 +9,7 @@ import time
 
 from core.agents.base import AgentBase, now
 from core.claims import counts, reap, refresh_frontier
-from core.db import SPRINTS, TICKETS, coll
+from core.db import RUNS, SPRINTS, TICKETS, coll
 from core.metrics import latest_pass_rate, tokens_spent
 
 TERMINAL = {"done", "failed"}
@@ -65,6 +65,7 @@ class Procurator(AgentBase):
             {"run_id": self.run_id, "sprint": sprint},
             {"$set": {"ended_at": now(), "status": "done", "summary": final}},
         )
+        coll(RUNS).update_one({"run_id": self.run_id}, {"$set": {"status": "done", "summary": final}})
         self.log("sprint.done", f"sprint {sprint} closed", **final)
         try:
             from server.voice import call_stakeholder

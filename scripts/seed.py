@@ -27,6 +27,10 @@ def main() -> None:
             coll(name).delete_many({"meta.run_id": cfg.run_id})  # metrics ts
         print(f"wiped run_id={cfg.run_id}")
 
+    from core.runs import seed_run
+    seed_run(cfg.run_id, fresh=False)
+    print(f"mandate v1 seeded for run_id={cfg.run_id}")
+    return
     spec = spec_path().read_text()
     coll(MANDATE).insert_one({
         "run_id": cfg.run_id, "version": 1, "spec": spec,

@@ -45,7 +45,9 @@ def clean(doc: Any) -> Any:
 
 
 def rid(run: str | None) -> str:
-    return run or config().run_id
+    from core.runs import current_run_id
+
+    return run or current_run_id()
 
 
 @app.get("/api/state")

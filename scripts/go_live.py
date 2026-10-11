@@ -47,8 +47,9 @@ def main() -> None:
     c = Config()
     tw = Client(c.twilio_account_sid, c.twilio_auth_token)
     n = tw.incoming_phone_numbers.list(phone_number=c.twilio_phone_number)[0]
-    n.update(voice_url=f"{url}/voice/incoming", voice_method="POST")
-    print(f"Twilio {c.twilio_phone_number} webhook -> {url}/voice/incoming")
+    n.update(voice_url=f"{url}/voice/incoming", voice_method="POST",
+             status_callback=f"{url}/voice/status", status_callback_method="POST")
+    print(f"Twilio {c.twilio_phone_number} webhook -> {url}/voice/incoming (+status callback)")
 
     # confirm the public loop answers
     req = urllib.request.Request(f"{url}/voice/incoming", data=b"CallSid=CAgolive", method="POST")
