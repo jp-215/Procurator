@@ -47,14 +47,22 @@ def main() -> None:
 
         Procurator().run_sprint(sprint=0)
     elif role == "all":
+        import os
+
         from core.agents.censor import Censor
         from core.agents.legatus import Legatus
         from core.agents.procurator import Procurator
 
-        Legatus().decompose()
+        Legatus().decompose(sprint=0)
         threading.Thread(target=Censor().run_forever, daemon=True).start()
         run_workers(n)
         Procurator().run_sprint(sprint=0)
+        if os.environ.get("DRIFT", "").lower() in {"1", "true", "yes"}:
+            from core.agents.dominus import Dominus
+
+            Dominus().inject_drift(sprint=1)
+            Legatus().decompose(sprint=1)
+            Procurator().run_sprint(sprint=1)
     else:
         raise SystemExit(f"unknown role: {role}")
 

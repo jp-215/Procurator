@@ -36,7 +36,7 @@ class GradeResult:
         return sorted(ac for ac, s in self.per_ac.items() if s == "passed" and ac not in prev)
 
 
-def grade(src_dir: Path | None = None, timeout: int = 120) -> GradeResult:
+def grade(src_dir: Path | None = None, timeout: int = 120, wave: int = 1) -> GradeResult:
     """Grade a source tree (default: target/src) against the hidden suite."""
     from core.paths import target_src
 
@@ -44,7 +44,11 @@ def grade(src_dir: Path | None = None, timeout: int = 120) -> GradeResult:
     with tempfile.TemporaryDirectory(prefix="procurator-grade-") as tmp:
         tmpdir = Path(tmp)
         shutil.copytree(src, tmpdir / "src")
-        shutil.copytree(HIDDEN, tmpdir / "tests")
+        (tmpdir / "tests").mkdir()
+        for f in sorted(HIDDEN.glob("*.py")):
+            if wave < 2 and "wave2" in f.name:
+                continue
+            shutil.copy(f, tmpdir / "tests" / f.name)
         report = tmpdir / "report.json"
         proc = subprocess.run(
             [

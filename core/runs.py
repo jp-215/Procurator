@@ -62,6 +62,7 @@ def reset_workbench() -> None:
     if dst.exists():
         shutil.rmtree(dst)
     shutil.copytree(skeleton, dst)
+    shutil.copy(ROOT / "target" / "SPEC.md", dst.parent / "SPEC.md")
 
 
 def launch_headless(run_id: str, workers: int = 2, log_dir: Path | None = None) -> int:

@@ -28,13 +28,20 @@ Rules:
 class Legatus(AgentBase):
     role = "legatus"
 
-    def decompose(self) -> int:
+    def decompose(self, sprint: int = 0) -> int:
+        self.sprint = sprint
         mandate = coll(MANDATE).find_one({"run_id": self.run_id}, sort=[("version", -1)])
         spec = mandate["spec"]
         self.log("decompose.start", f"mandate v{mandate['version']}")
 
+        delta_note = ""
+        if sprint > 0:
+            delta_note = ("\nIMPORTANT: this is a SCOPE CHANGE sprint. The codebase already "
+                          "satisfies every AC from earlier spec sections. Create tickets ONLY "
+                          "for the newest scope-change section; 1-3 tickets, each touching the "
+                          "minimum set of modules. Preserving existing behavior is part of done.")
         tickets = ask_json(
-            self.agent_id, SYSTEM, f"Spec:\n\n{spec}",
+            self.agent_id, SYSTEM + delta_note, f"Spec:\n\n{spec}",
             model=self.cfg.procurator_model, sprint=self.sprint, max_tokens=4096,
         )
         if isinstance(tickets, dict):  # model wrapped the list in an object

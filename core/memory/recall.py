@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.config import config
-from core.db import EPISODES, MEMORY, PLAYBOOKS, coll
+from core.db import EPISODES, MEMORY, PLAYBOOKS, TICKETS, coll
 from core.embeddings import embed_one
 
 
@@ -30,9 +30,26 @@ def _vector_hits(collection: str, index: str, qvec: list[float], k: int, field: 
         return []  # index still building, or M0 hiccup — recall degrades, never crashes
 
 
+def _class_has_rejects(ticket: dict[str, Any]) -> bool:
+    from core.db import TICKETS, VERDICTS
+
+    klass = ticket.get("ticket_class") or ticket.get("module")
+    if not klass:
+        return False
+    tids = [t["_id"] for t in coll(TICKETS).find({"ticket_class": klass}, {"_id": 1}).limit(50)]
+    return bool(tids) and coll(VERDICTS).count_documents({"ticket_id": {"$in": tids}, "accepted": False}) > 0
+
+
 def recall_for_ticket(run_id: str, ticket: dict[str, Any]) -> tuple[str, int]:
-    """Returns (context_block, hit_count)."""
+    """Returns (context_block, hit_count).
+
+    Targeted economics: memory is injected as insurance, not as a flat tax —
+    only on drift sprints (existing behavior at risk) or on ticket classes
+    with a reject history. Easy first-pass work runs lean.
+    """
     if not config().memory_enabled:
+        return "", 0
+    if ticket.get("sprint", 0) == 0 and not _class_has_rejects(ticket):
         return "", 0
 
     parts: list[str] = []

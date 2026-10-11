@@ -53,7 +53,7 @@ class Censor(AgentBase):
             shutil.copytree(target_src(), stage)
             for name, content in artifact["files"].items():
                 (stage / "ordersvc" / name).write_text(content)
-            result = grade(stage)
+            result = grade(stage, wave=2 if self.sprint >= 1 else 1)
 
         baseline = self._baseline()
         prev_pass = {ac for ac, s in (baseline.per_ac if baseline else {}).items() if s == "passed"}
