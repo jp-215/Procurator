@@ -117,12 +117,21 @@ class Procurator(AgentBase):
         coll(RUNS).update_one({"run_id": self.run_id}, {"$set": {"status": "done", "summary": final}})
         self.log("sprint.done", f"sprint {sprint} closed", **final)
         try:
-            from server.voice import call_stakeholder
+            from core.llm import ask
+            from server.voice import _briefing, call_stakeholder
 
-            summary = (f"Sprint {sprint} closed. {final['pass']} acceptance criteria passing. "
-                       f"{final['tokens']} tokens spent.")
-            if call_stakeholder(summary):
-                self.log("voice.outbound", "called the stakeholder with the standup")
+            report = ask(
+                self.agent_id,
+                "You are Procurator phoning the stakeholder after a sprint. Compose the "
+                "spoken report: 4-6 sentences. Cover: what the project is, which features "
+                "shipped this sprint, WHY each matters to the product goal, the verified "
+                "test score, and what happens next. Spoken register, numbers in words, "
+                "no lists. Ground everything in the briefing.",
+                f"Sprint {sprint} just closed.\n{_briefing(self.run_id)}",
+                sprint=sprint, max_tokens=350,
+            )
+            if call_stakeholder(" ".join(report.split())):
+                self.log("voice.outbound", "called the stakeholder with the sprint report")
         except Exception:
             pass
         return final
