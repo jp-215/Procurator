@@ -65,9 +65,34 @@ def reset_workbench() -> None:
     shutil.copy(ROOT / "target" / "SPEC.md", dst.parent / "SPEC.md")
 
 
-def launch_headless(run_id: str, workers: int = 2, log_dir: Path | None = None) -> int:
-    """Detach a full mesh run; returns the PID. Survives the caller's exit."""
+def active_run() -> str | None:
+    """A run currently holding the shared workbench, if any. Clears rows whose
+    launcher pid is dead so a crashed run can't wedge the guard forever."""
     import os
+
+    r = coll(RUNS).find_one({"status": "running"}, sort=[("created_at", -1)])
+    if not r:
+        return None
+    pid = r.get("pid")
+    if pid:
+        try:
+            os.kill(pid, 0)
+        except OSError:
+            coll(RUNS).update_one({"_id": r["_id"]}, {"$set": {"status": "crashed"}})
+            return None
+    return r["run_id"]
+
+
+def launch_headless(run_id: str, workers: int = 2, log_dir: Path | None = None) -> int:
+    """Detach a full mesh run; returns the PID. Survives the caller's exit.
+
+    Refuses to double-book the shared workbench: raises if another run is live.
+    """
+    import os
+
+    other = active_run()
+    if other and other != run_id:
+        raise RuntimeError(f"run {other} is still active — workbench is single-tenant")
 
     logs = log_dir or (ROOT / ".runs")
     logs.mkdir(exist_ok=True)

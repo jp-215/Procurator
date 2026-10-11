@@ -200,6 +200,16 @@ def _on_hangup(call_sid: str) -> None:
                                  "created_at": _now()})
         return
     run_id = f"call-{call_sid[-6:].lower()}"
+    from core.runs import active_run
+
+    other = active_run()
+    if other:
+        coll(EVENTS).insert_one({"run_id": other, "sprint": 0, "agent": "procurator",
+                                 "kind": "voice.deferred",
+                                 "text": f"build directive received but run {other} holds the "
+                                         f"workbench — directive logged, not launched",
+                                 "created_at": _now()})
+        return
     reset_workbench()
     seed_run(run_id, directive=verdict.get("directive", ""))
     pid = launch_headless(run_id)
