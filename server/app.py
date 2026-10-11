@@ -17,8 +17,8 @@ from fastapi.responses import StreamingResponse
 
 from core.config import config
 from core.db import (
-    AGENTS, ARTIFACTS, DECISIONS, EPISODES, EVENTS, MANDATE, MEMORY, METRICS,
-    PLAYBOOKS, SPRINTS, STAKEHOLDER_MSGS, TICKETS, VERDICTS, coll,
+    AGENTS, ARTIFACTS, DECISIONS, DISPATCH_LOG, EPISODES, EVENTS, MANDATE, MEMORY,
+    METRICS, PLAYBOOKS, SPRINTS, STAKEHOLDER_MSGS, TICKETS, VERDICTS, coll,
 )
 from core.memory.provenance import provenance_chain
 from core.metrics import latest_pass_rate, tokens_spent
