@@ -1,11 +1,13 @@
 import "./style.css";
 import { getState, getTicket, getMemory, getEvents, getSeries, getProvenance, subscribe, type Dict } from "./api";
 import { renderMetrics } from "./charts";
+import { renderFlow, flowPulse } from "./flow";
 
 const app = document.getElementById("app")!;
 app.innerHTML = `
   <div id="statusbar">
     <span class="brand">PROCURATOR</span>
+    <span id="view-toggle"><span class="vt active" data-v="editor">Editor</span><span class="vt" data-v="flow">Flow</span></span>
     <span class="kv">run <b id="sb-run">–</b></span>
     <span class="kv">sprint <b id="sb-sprint">–</b></span>
     <span class="kv">pass <b id="sb-pass">–</b></span>
@@ -26,6 +28,18 @@ app.innerHTML = `
   </div>`;
 
 const $ = (s: string) => document.querySelector(s) as HTMLElement;
+let view = "editor";
+const flowDiv = document.createElement("div");
+flowDiv.id = "flow"; flowDiv.style.display = "none";
+document.getElementById("app")!.appendChild(flowDiv);
+document.querySelectorAll("#view-toggle .vt").forEach(el => el.addEventListener("click", () => {
+  view = (el as HTMLElement).dataset.v!;
+  document.querySelectorAll("#view-toggle .vt").forEach(t => t.classList.toggle("active", (t as HTMLElement).dataset.v === view));
+  const flowMode = view === "flow";
+  flowDiv.style.display = flowMode ? "block" : "none";
+  for (const id of ["explorer", "editor", "inspector", "bottom"]) $("#" + id).style.display = flowMode ? "none" : "";
+  if (flowMode) renderFlow(flowDiv);
+}));
 let state: Dict = {}; let events: Dict[] = []; let bottomTab = "events";
 let tabs: { id: string; title: string; render: () => void }[] = []; let activeTab = "";
 
@@ -170,6 +184,7 @@ async function refresh() {
   openStatic("mandate");
   subscribe(m => {
     if (m.type === "event" && m.op === "insert") { events.push(m.doc); if (events.length > 500) events.shift(); }
+    if (view === "flow" && m.op === "insert") flowPulse(m);
     // any write refreshes the snapshot cheaply (debounced)
     clearTimeout((window as any).__rt); (window as any).__rt = setTimeout(refresh, 400);
     if (bottomTab !== "metrics") renderBottom();

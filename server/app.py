@@ -102,6 +102,22 @@ def provenance(decision_id: str):
     return clean(chain)
 
 
+@app.get("/api/flow")
+def flow(run: str | None = None):
+    r = rid(run)
+    names = {
+        "stakeholder_msgs": STAKEHOLDER_MSGS, "mandate": MANDATE, "tickets": TICKETS,
+        "events": EVENTS, "artifacts": ARTIFACTS, "verdicts": VERDICTS,
+        "decisions": DECISIONS, "episodes": EPISODES, "memory": MEMORY, "playbooks": PLAYBOOKS,
+    }
+    counts = {k: coll(c).count_documents({"run_id": r}) for k, c in names.items()}
+    counts["playbooks_all"] = coll(PLAYBOOKS).count_documents({})
+    counts["metrics"] = coll(METRICS).count_documents({"meta.run_id": r})
+    passed, total = latest_pass_rate(r)
+    return {"run_id": r, "counts": counts, "pass": {"passed": passed, "total": total},
+            "tokens": tokens_spent(r)}
+
+
 @app.get("/api/metrics/series")
 def metrics_series(run: str | None = None):
     r = rid(run)
