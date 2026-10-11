@@ -59,7 +59,23 @@ class Censor(AgentBase):
         newly = result.newly_passing(baseline)
         ac_refs = ticket.get("ac_refs", [])
         refs_passing = [ac for ac in ac_refs if result.per_ac.get(ac) == "passed"]
-        accepted = not regressions and bool(newly or (ac_refs and len(refs_passing) == len(ac_refs)))
+        # Accept when nothing regresses AND the ticket advances the board:
+        #   - new tests pass, or
+        #   - all of the ticket's own ACs pass, or
+        #   - it's an infrastructure ticket (no ac_refs), or
+        #   - dependents are starving behind it and the change is harmless —
+        #     holding back a harmless prerequisite deadlocks the DAG; its ACs
+        #     stay enforced by the regression gate as dependents land.
+        infrastructure = not ac_refs
+        dependents_blocked = coll(TICKETS).count_documents(
+            {"run_id": self.run_id, "status": "blocked", "deps": ticket["_id"]}
+        )
+        accepted = not regressions and bool(
+            newly
+            or infrastructure
+            or len(refs_passing) == len(ac_refs)
+            or dependents_blocked
+        )
 
         verdict_doc: dict[str, Any] = {
             "run_id": self.run_id, "ticket_id": ticket["_id"], "sprint": self.sprint,

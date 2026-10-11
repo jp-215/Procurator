@@ -20,7 +20,9 @@ class BudgetExhausted(RuntimeError):
 
 @lru_cache(maxsize=1)
 def _client() -> anthropic.Anthropic:
-    return anthropic.Anthropic(api_key=config().anthropic_api_key)
+    cfg = config()
+    headers = {"anthropic-workspace-id": cfg.anthropic_workspace_id} if cfg.anthropic_workspace_id else None
+    return anthropic.Anthropic(api_key=cfg.anthropic_api_key, default_headers=headers)
 
 
 def ask(
@@ -64,4 +66,4 @@ def ask_json(agent: str, system: str, user: str, **kw) -> Any:
     m = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
     raw = m.group(1) if m else text
     start = min((i for i in (raw.find("{"), raw.find("[")) if i >= 0), default=0)
-    return json.loads(raw[start:])
+    return json.loads(raw[start:], strict=False)  # tolerate raw newlines/tabs inside strings

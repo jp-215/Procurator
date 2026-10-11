@@ -18,7 +18,10 @@ Rules:
   "priority": int (higher = sooner), "ticket_class": str (short category)}
 - deps must be acyclic and minimal: only true build-order dependencies
   (e.g. orders.py uses store.py and auth.py).
-- Cover EVERY AC in the spec across the tickets' ac_refs."""
+- Cover EVERY AC in the spec across the tickets' ac_refs.
+- ac_refs must list ONLY ACs this ticket alone can make pass. Shared scaffolding
+  (exception types, base models) gets ac_refs: [] — its correctness is proven by
+  the tickets that use it, never by itself."""
 
 
 class Legatus(AgentBase):
@@ -33,6 +36,10 @@ class Legatus(AgentBase):
             self.agent_id, SYSTEM, f"Spec:\n\n{spec}",
             model=self.cfg.procurator_model, sprint=self.sprint, max_tokens=4096,
         )
+        if isinstance(tickets, dict):  # model wrapped the list in an object
+            tickets = next((v for v in tickets.values() if isinstance(v, list)), [])
+        if not tickets:
+            raise ValueError("Legatus produced no tickets")
         docs = []
         for i, t in enumerate(tickets):
             docs.append({

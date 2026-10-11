@@ -4,6 +4,7 @@ hands it to review. Kill it any time; the lease reaper requeues its work.
 """
 from __future__ import annotations
 
+import re
 import threading
 import time
 from pathlib import Path
@@ -12,7 +13,7 @@ from typing import Any
 from core.agents.base import AgentBase, now
 from core.claims import claim_next, complete, renew_lease
 from core.db import ARTIFACTS, VERDICTS, coll
-from core.llm import BudgetExhausted, ask_json
+from core.llm import BudgetExhausted, ask
 from core.memory.recall import recall_for_ticket
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -23,8 +24,12 @@ SYSTEM = """You are Legionarius, an implementation agent. You receive one ticket
 a module to implement against a spec excerpt, plus the current content of the
 files in scope and any reviewer feedback from failed attempts.
 
-Return JSON: {"files": {"<filename>": "<complete new file content>", ...},
-"notes": "<one-line summary of your approach>"}
+Output format — one block per file you are writing (NO JSON, no markdown fences):
+
+===FILE: <filename>===
+<complete new file content>
+===END===
+NOTES: <one-line summary of your approach>
 
 Rules:
 - Return COMPLETE file contents, not diffs. Only files inside the ordersvc package.
@@ -32,6 +37,15 @@ Rules:
   exception types, and semantics. Do not rename anything the spec names.
 - You may read-depend on sibling modules (they exist per the spec) but only
   rewrite files for YOUR ticket unless feedback demands otherwise."""
+
+FILE_RE = re.compile(r"===FILE:\s*(\S+?)\s*===\n(.*?)\n===END===", re.DOTALL)
+NOTES_RE = re.compile(r"^NOTES:\s*(.*)$", re.MULTILINE)
+
+
+def parse_files(text: str) -> tuple[dict[str, str], str]:
+    files = {m.group(1): m.group(2) for m in FILE_RE.finditer(text)}
+    notes = NOTES_RE.search(text)
+    return files, (notes.group(1) if notes else "")
 
 
 class Legionarius(AgentBase):
@@ -72,13 +86,14 @@ class Legionarius(AgentBase):
 
         try:
             prompt, hits = self._context_for(ticket)
-            result = ask_json(
+            text = ask(
                 self.agent_id, SYSTEM, prompt,
                 sprint=self.sprint, ticket=str(ticket["_id"]),
                 retrieval_hits=hits, max_tokens=8192,
             )
+            raw_files, notes = parse_files(text)
             files = {
-                name: content for name, content in result.get("files", {}).items()
+                name: content for name, content in raw_files.items()
                 if name.endswith(".py") and "/" not in name and "\\" not in name and ".." not in name
             }
             if not files:
@@ -86,7 +101,7 @@ class Legionarius(AgentBase):
             coll(ARTIFACTS).insert_one({
                 "run_id": self.run_id, "ticket_id": ticket["_id"], "sprint": self.sprint,
                 "worker_id": self.agent_id, "files": files,
-                "notes": result.get("notes", ""), "created_at": now(),
+                "notes": notes, "created_at": now(),
             })
             complete(ticket["_id"], self.agent_id, status="review")
             self.log("ticket.submitted", f"{ticket['title']} -> review",

@@ -31,6 +31,7 @@ class Config:
     voyage_dims: int = field(default_factory=lambda: _int("VOYAGE_DIMS", 1024))
 
     anthropic_api_key: str = field(default_factory=lambda: os.environ.get("ANTHROPIC_API_KEY", ""))
+    anthropic_workspace_id: str = field(default_factory=lambda: os.environ.get("ANTHROPIC_WORKSPACE_ID", ""))
     procurator_model: str = field(default_factory=lambda: os.environ.get("PROCURATOR_MODEL", "claude-opus-5"))
     worker_model: str = field(default_factory=lambda: os.environ.get("WORKER_MODEL", "claude-sonnet-5"))
 
