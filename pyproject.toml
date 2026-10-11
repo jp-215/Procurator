@@ -1,0 +1,27 @@
+[project]
+name = "procurator"
+version = "0.1.0"
+description = "PM-led multi-agent mesh for long-horizon engineering on MongoDB Atlas"
+requires-python = ">=3.12"
+dependencies = [
+  "pymongo>=4.11",
+  "anthropic",
+  "voyageai",
+  "python-dotenv",
+  "fastapi",
+  "uvicorn[standard]",
+  "sse-starlette",
+  "pytest",
+  "pytest-json-report",
+  "httpx",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["core", "core.agents", "core.memory", "runner", "server"]

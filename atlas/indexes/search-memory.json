@@ -1,0 +1,10 @@
+{
+  "name": "memory_semantic",
+  "collection": "memory",
+  "type": "vectorSearch",
+  "fields": [
+    { "type": "vector", "path": "embedding", "numDimensions": 1024, "similarity": "cosine" },
+    { "type": "filter", "path": "kind" },
+    { "type": "filter", "path": "confidence" }
+  ]
+}

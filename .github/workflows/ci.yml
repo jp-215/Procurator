@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Syntax check (all modules compile)
+        run: python -m compileall -q core runner scripts server tests
+
+      - name: Guardrail — no agent code touches hidden_tests/
+        run: |
+          # Only runner/sandbox.py may reference the grading oracle.
+          hits=$(grep -rl "hidden_tests" core/ scripts/ server/ || true)
+          if [ -n "$hits" ]; then
+            echo "::error::hidden_tests referenced outside runner/: $hits"
+            exit 1
+          fi
+
+      - name: Tests (Mongo-dependent tests auto-skip without MONGODB_URI)
+        run: pytest tests/ -v --tb=short
+
+      - name: Calibration — hidden suite floor
+        run: |
+          out=$(python runner/sandbox.py)
+          echo "$out"
+          echo "$out" | head -1 | grep -q "^0/25" || { echo "::error::skeleton must grade 0/25"; exit 1; }
