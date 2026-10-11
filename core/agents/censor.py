@@ -16,6 +16,7 @@ from typing import Any
 from core.agents.base import AgentBase, now
 from core.claims import refresh_frontier
 from core.db import ARTIFACTS, TICKETS, VERDICTS, coll
+from core.memory.provenance import record_decision
 from core.metrics import record_turn
 from runner.sandbox import GradeResult, grade
 
@@ -108,7 +109,14 @@ class Censor(AgentBase):
                      f"{ticket['title']} attempt {attempts}: {result.passed}/{result.total}, "
                      f"regressions={regressions}", ticket_id=str(ticket["_id"]))
 
-        coll(VERDICTS).insert_one(verdict_doc)
+        vid = coll(VERDICTS).insert_one(verdict_doc).inserted_id
+        record_decision(
+            self.run_id, self.agent_id, "verdict",
+            f"{'accepted' if accepted else 'rejected'} {ticket['title']} ({result.passed}/{result.total})",
+            caused_by=[d for d in [ticket.get("decision_id")] if d],
+            ticket_id=str(ticket["_id"]), verdict_id=str(vid),
+            newly_passing=newly, regressions=regressions,
+        )
         record_turn(
             run_id=self.run_id, agent=self.agent_id, sprint=self.sprint,
             ticket=str(ticket["_id"]), tests_passed=result.passed, tests_total=result.total,

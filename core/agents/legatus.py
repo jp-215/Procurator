@@ -4,8 +4,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from core.agents.base import AgentBase, now
-from core.db import MANDATE, TICKETS, coll
+from core.db import MANDATE, STAKEHOLDER_MSGS, TICKETS, coll
 from core.llm import ask_json
+from core.memory.provenance import record_decision
 
 SYSTEM = """You are Legatus, the engineering lead of an agent mesh. Decompose a
 software spec into implementation tickets forming a dependency DAG.
@@ -59,5 +60,13 @@ class Legatus(AgentBase):
                 {"$set": {"deps": deps, "status": "ready" if not deps else "blocked"},
                  "$unset": {"deps_idx": ""}},
             )
+        msg = coll(STAKEHOLDER_MSGS).find_one({"run_id": self.run_id}, sort=[("created_at", -1)])
+        dec = record_decision(
+            self.run_id, self.agent_id, "decomposition",
+            f"split mandate v{mandate['version']} into {len(ids)} tickets",
+            caused_by=[msg["_id"]] if msg else [],
+            ticket_ids=[str(i) for i in ids], mandate_version=mandate["version"],
+        )
+        coll(TICKETS).update_many({"_id": {"$in": ids}}, {"$set": {"decision_id": dec}})
         self.log("decompose.done", f"{len(ids)} tickets", ticket_ids=[str(i) for i in ids])
         return len(ids)

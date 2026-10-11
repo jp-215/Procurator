@@ -45,6 +45,9 @@ streams are the message bus; atomic `findOneAndUpdate` claims are the scheduler.
 Anything that would let an LLM opinion substitute for these numbers is a bug.
 
 ## Build state
-Phases A–C done (spine, target+hidden suite calibrated 0/25→25/25, minimal mesh).
-Phase D (Scriba memory tiers + recall), E (Governor + Dominus), F (dashboard + ablation)
-tracked in the plan. `core/memory/recall.py` is the Phase D stub to fill in.
+Phases A–D done + dashboard (A: spine; B: target+hidden suite 0/25→25/25; C: minimal
+mesh, verified live — run-001 hit 25/25 at 81k tokens; D: Scriba tiers, $vectorSearch
+recall, $graphLookup provenance; F-partial: SSE server (server/app.py, port 8787) +
+Vite editor-UI (dashboard/, port 5173)). Remaining: Phase E (Dispatch Governor +
+Dominus scope injection) and the ablation script/chart. Voyage free tier is 3 RPM —
+embeddings are paced in core/embeddings.py; don't call Voyage directly.

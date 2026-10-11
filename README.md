@@ -39,12 +39,55 @@ mesh resumes from Mongo.
 - **M2** — marginal yield (Δ tests / Δ tokens), drives width/depth/redundancy scaling
 - **M3** — ablation: same mandate with memory on vs off; the proof the memory layer earns its keep
 
-## Quickstart
+## Running everything, end to end
+
+**0. One-time setup**
 ```bash
+python3 -m venv .venv && .venv/bin/pip install -e .
+cd dashboard && npm install && cd ..
 cp .env.example .env            # fill in MONGODB_URI, ANTHROPIC_API_KEY, VOYAGE_API_KEY
-.venv/bin/python scripts/bootstrap_atlas.py --search
-.venv/bin/python scripts/seed.py --fresh
-.venv/bin/python -m core.main all
+.venv/bin/python scripts/bootstrap_atlas.py --search   # collections + vector indexes
+```
+
+**1. Seed a run** (pick a RUN_ID; it namespaces everything in Atlas)
+```bash
+export RUN_ID=run-002
+.venv/bin/python scripts/seed.py --fresh   # mandate + sprint 0 (wipes only this RUN_ID)
+git checkout -- target/src                 # start from the skeleton
+```
+
+**2. Terminal A — telemetry server** (SSE bridge, port 8787)
+```bash
+RUN_ID=run-002 .venv/bin/uvicorn server.app:app --port 8787
+```
+
+**3. Terminal B — dashboard** (Vite dev server, port 5173, proxies /api -> 8787)
+```bash
+cd dashboard && npm run dev
+```
+Open **http://localhost:5173** (or `?run=run-002` to pin a run). Explorer left,
+document tabs center, provenance inspector right, Events/Metrics/Problems bottom.
+
+**4. Terminal C — the mesh**
+```bash
+RUN_ID=run-002 .venv/bin/python -m core.main all 2        # decompose + 2 workers + censor + PM
+# crashed or interrupted? resume without re-decomposing:
+RUN_ID=run-002 .venv/bin/python scripts/resume.py 2
+# scale horizontally from any machine with the same MONGODB_URI:
+RUN_ID=run-002 .venv/bin/python -m core.main legionarius 3
+```
+
+**5. Watch.** Tickets flow blocked -> ready -> claimed -> review -> done in the
+explorer; verdicts and standups stream into Events; the Metrics tab plots M1
+(tests passing) and token burn live; click a done ticket to see its code and its
+`$graphLookup` provenance chain back to the stakeholder message.
+
+**Ablation (M3)**: run once with `MEMORY_ENABLED=false RUN_ID=run-off`, once with
+`MEMORY_ENABLED=true RUN_ID=run-on`, same budget; compare the two curves.
+
+**Grade the tree yourself at any time**
+```bash
+.venv/bin/python runner/sandbox.py        # hidden-suite score of target/src
 ```
 
 ## Layout

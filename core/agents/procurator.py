@@ -52,6 +52,14 @@ class Procurator(AgentBase):
             tick += 1
             time.sleep(poll_seconds)
 
+        if self.cfg.memory_enabled:
+            from core.memory.scriba import Scriba
+
+            scriba = Scriba()
+            scriba.compact(sprint)
+            scriba.distill(sprint)
+            scriba.retro(sprint)
+
         final = self.standup()
         coll(SPRINTS).update_one(
             {"run_id": self.run_id, "sprint": sprint},
