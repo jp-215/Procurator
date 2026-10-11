@@ -1,6 +1,6 @@
 import "./style.css";
 import { getState, getTicket, getMemory, getEvents, getSeries, getProvenance, subscribe, type Dict } from "./api";
-import { renderMetrics } from "./charts";
+import { renderMetrics, renderAblation } from "./charts";
 import { renderFlow, flowPulse } from "./flow";
 
 const app = document.getElementById("app")!;
@@ -160,7 +160,11 @@ function evLine(e: Dict): string {
 async function renderBottom() {
   const el = $("#bottom-content");
   if (bottomTab === "events") { el.innerHTML = events.map(evLine).join(""); el.scrollTop = el.scrollHeight; }
-  if (bottomTab === "metrics") renderMetrics(el, await getSeries(), state);
+  if (bottomTab === "metrics") {
+    renderMetrics(el, await getSeries(), state);
+    const runs = await fetch("/api/ablation").then(r => r.json()).catch(() => []);
+    renderAblation(el.querySelector("#metrics-wrap")!, runs);
+  }
   if (bottomTab === "problems") {
     const probs = events.filter(e => /reject|error|halt|reaper/.test(e.kind ?? ""));
     el.innerHTML = probs.map(evLine).join("") || `<div style="color:var(--text-muted)">no problems</div>`;

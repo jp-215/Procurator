@@ -66,3 +66,35 @@ export function renderMetrics(el: HTMLElement, series: Dict[], state: Dict) {
   lineChart(el.querySelector("#c-pass")!, passPts, { color: css("--series-1"), yMax: total, yFmt: v => `${Math.round(v)}`, title: "tests passing over time" });
   lineChart(el.querySelector("#c-tok")!, tokPts, { color: css("--series-2"), yMax: Math.max(...tokPts.map(p => p.y), 1), yFmt: v => `${(v / 1000).toFixed(0)}k`, title: "cumulative tokens" });
 }
+
+// M3 ablation: tokens (x) vs tests passing (y), one line per run.
+// Same measure on one axis -> one chart; two series max direct-labeled.
+export function renderAblation(el: HTMLElement, runs: Dict[]) {
+  const box = document.createElement("div");
+  box.className = "chart-box";
+  box.innerHTML = `<div class="title">M3 ablation — tests passing vs tokens spent</div>`;
+  el.appendChild(box);
+  const data = runs.filter(r => r.points.length > 1).slice(0, 4);
+  if (!data.length) { box.insertAdjacentHTML("beforeend", `<div style="color:var(--text-muted)">need ≥2 runs with metrics</div>`); return; }
+  const W = 640, H = 150, PL = 40, PR = 120, PT = 10, PB = 20;
+  const xMax = Math.max(...data.map(r => r.total_tokens));
+  const yMax = Math.max(...data.map(r => Math.max(...r.points.map((p: Dict) => p.passed))), 25);
+  const sx = (v: number) => PL + (v / xMax) * (W - PL - PR);
+  const sy = (v: number) => PT + (1 - v / yMax) * (H - PT - PB);
+  const colors = [css("--series-1"), css("--series-2"), "#199e70", "#c98500"];
+  let paths = "", labels = "";
+  data.forEach((r, i) => {
+    const pts = [{ tokens: 0, passed: 0 }, ...r.points];
+    const d = pts.map((p: Dict, j: number) => `${j ? "L" : "M"}${sx(p.tokens).toFixed(1)},${sy(p.passed).toFixed(1)}`).join(" ");
+    const last = pts[pts.length - 1];
+    paths += `<path d="${d}" fill="none" stroke="${colors[i]}" stroke-width="2" stroke-linejoin="round"/>
+      <circle cx="${sx(last.tokens)}" cy="${sy(last.passed)}" r="4" fill="${colors[i]}"/>`;
+    labels += `<text x="${sx(last.tokens) + 8}" y="${sy(last.passed) + 4 + (i % 2) * 12}" font-size="11" fill="${css("--text-primary")}">${r.run_id} · ${(last.tokens / 1000).toFixed(0)}k</text>`;
+  });
+  const grid = [0, Math.round(yMax / 2), yMax].map(g =>
+    `<line x1="${PL}" y1="${sy(g)}" x2="${W - PR}" y2="${sy(g)}" stroke="${css("--border")}"/>
+     <text x="${PL - 6}" y="${sy(g) + 4}" text-anchor="end" font-size="10" fill="${css("--text-muted")}">${g}</text>`).join("");
+  box.insertAdjacentHTML("beforeend",
+    `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="ablation">${grid}${paths}${labels}
+     <text x="${(PL + W - PR) / 2}" y="${H - 4}" text-anchor="middle" font-size="10" fill="${css("--text-muted")}">tokens →</text></svg>`);
+}

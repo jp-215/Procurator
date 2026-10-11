@@ -133,6 +133,28 @@ def metrics_series(run: str | None = None):
     return series
 
 
+@app.get("/api/ablation")
+def ablation(runs: str = ""):
+    """Tokens-vs-tests curves for the M3 comparison. ?runs=a,b (default: all registered)."""
+    from core.db import RUNS
+
+    run_ids = [r for r in runs.split(",") if r] or [d["run_id"] for d in coll("runs").find().sort("created_at", 1)]
+    out = []
+    for r in run_ids:
+        rows = list(coll(METRICS).find({"meta.run_id": r}).sort("ts", 1))
+        cum, best, pts = 0, 0, []
+        memory_on = None
+        for m in rows:
+            cum += m.get("tokens_in", 0) + m.get("tokens_out", 0)
+            if m.get("tests_total"):
+                best = max(best, m["tests_passed"])
+                pts.append({"tokens": cum, "passed": best})
+        mand = coll(MANDATE).find_one({"run_id": r})
+        out.append({"run_id": r, "points": pts, "total_tokens": cum,
+                    "final_passed": best, "directive": (mand or {}).get("directive", "")})
+    return out
+
+
 @app.get("/api/stream")
 def stream(run: str | None = None):
     r = rid(run)
