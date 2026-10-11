@@ -20,8 +20,9 @@ from core.memory.provenance import record_decision
 from core.metrics import record_turn
 from runner.sandbox import GradeResult, grade
 
-ROOT = Path(__file__).resolve().parent.parent.parent
-TARGET_SRC = ROOT / "target" / "src"
+from core.paths import target_src
+from core.vcs import commit_accepted
+
 MAX_ATTEMPTS = 3
 
 
@@ -49,7 +50,7 @@ class Censor(AgentBase):
         # stage = current accepted tree + this artifact's files
         with tempfile.TemporaryDirectory(prefix="procurator-stage-") as tmp:
             stage = Path(tmp) / "src"
-            shutil.copytree(TARGET_SRC, stage)
+            shutil.copytree(target_src(), stage)
             for name, content in artifact["files"].items():
                 (stage / "ordersvc" / name).write_text(content)
             result = grade(stage)
@@ -87,7 +88,8 @@ class Censor(AgentBase):
 
         if accepted:
             for name, content in artifact["files"].items():
-                (TARGET_SRC / "ordersvc" / name).write_text(content)
+                (target_src() / "ordersvc" / name).write_text(content)
+            commit_accepted(ticket, result)
             coll(TICKETS).update_one({"_id": ticket["_id"]}, {"$set": {"status": "done", "done_at": now()}})
             refresh_frontier(self.run_id)
             self.log("verdict.accept",

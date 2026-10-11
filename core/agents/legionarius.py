@@ -16,9 +16,7 @@ from core.db import ARTIFACTS, VERDICTS, coll
 from core.llm import BudgetExhausted, ask
 from core.memory.recall import recall_for_ticket
 
-ROOT = Path(__file__).resolve().parent.parent.parent
-TARGET_SRC = ROOT / "target" / "src" / "ordersvc"
-SPEC = ROOT / "target" / "SPEC.md"
+from core.paths import spec_path, target_src
 
 SYSTEM = """You are Legionarius, an implementation agent. You receive one ticket:
 a module to implement against a spec excerpt, plus the current content of the
@@ -52,10 +50,10 @@ class Legionarius(AgentBase):
     role = "legionarius"
 
     def _context_for(self, ticket: dict[str, Any]) -> tuple[str, int]:
-        spec = SPEC.read_text()
+        spec = spec_path().read_text()
         module = ticket["module"]
         current = ""
-        for f in sorted(TARGET_SRC.glob("*.py")):
+        for f in sorted((target_src() / "ordersvc").glob("*.py")):
             marker = " (YOUR TICKET)" if f.name == module else ""
             current += f"\n--- {f.name}{marker} ---\n{f.read_text()}"
         feedback = ""

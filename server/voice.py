@@ -1,0 +1,165 @@
+"""Procurator's voice: Twilio phone webhooks + ElevenLabs speech.
+
+Inbound:  caller dials the Twilio number -> /voice/incoming -> Gather(speech)
+          -> /voice/turn: transcript becomes a stakeholder_msgs doc (same event
+          bus the mesh already watches), the PM answers from live metrics +
+          $vectorSearch memory recall, ElevenLabs renders it, TwiML plays it.
+Outbound: call_stakeholder() rings STAKEHOLDER_PHONE with the sprint standup.
+
+Every exchange is durable in Atlas — the dashboard streams it like any event.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+from xml.sax.saxutils import escape
+
+import httpx
+from fastapi import APIRouter, Form, Request
+from fastapi.responses import FileResponse, Response
+
+from core.config import config
+from core.db import EVENTS, STAKEHOLDER_MSGS, TICKETS, coll
+from core.llm import ask
+from core.memory.recall import recall_for_ticket
+from core.metrics import latest_pass_rate, tokens_spent
+
+router = APIRouter()
+AUDIO_DIR = Path(__file__).resolve().parent / ".audio"
+AUDIO_DIR.mkdir(exist_ok=True)
+
+PM_SYSTEM = """You are Procurator, the project-manager agent of a software mesh,
+speaking to the project stakeholder ON THE PHONE. Rules:
+- Max 3 sentences. Spoken register: no markdown, no lists, no URLs, say numbers
+  naturally ("twenty-three of twenty-five").
+- Ground every claim in the STATE and MEMORY blocks; never invent progress.
+- If the stakeholder gives a directive (scope change, priority, new requirement),
+  acknowledge it and confirm it is logged for the next sprint.
+- You are the single point of contact; be confident, candid about failures, brief."""
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _state_block(run_id: str) -> str:
+    passed, total = latest_pass_rate(run_id)
+    tk = {s["_id"]: s["n"] for s in coll(TICKETS).aggregate(
+        [{"$match": {"run_id": run_id}}, {"$group": {"_id": "$status", "n": {"$sum": 1}}}])}
+    return (f"STATE: hidden suite {passed}/{total} passing; tickets {tk or 'none yet'}; "
+            f"{tokens_spent(run_id)} tokens spent.")
+
+
+def _history(call_sid: str) -> str:
+    msgs = list(coll(STAKEHOLDER_MSGS).find({"call_sid": call_sid}).sort("created_at", 1))
+    return "\n".join(f"{m['from']}: {m['text']}" for m in msgs[-10:])
+
+
+def tts(text: str) -> str | None:
+    """ElevenLabs TTS -> cached mp3; returns public URL or None (fallback <Say>)."""
+    cfg = config()
+    if not cfg.elevenlabs_api_key or not cfg.public_base_url:
+        return None
+    key = hashlib.sha1(f"{cfg.elevenlabs_voice_id}:{text}".encode()).hexdigest()[:16]
+    f = AUDIO_DIR / f"{key}.mp3"
+    if not f.exists():
+        try:
+            r = httpx.post(
+                f"https://api.elevenlabs.io/v1/text-to-speech/{cfg.elevenlabs_voice_id}",
+                headers={"xi-api-key": cfg.elevenlabs_api_key},
+                json={"text": text, "model_id": "eleven_turbo_v2_5",
+                      "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}},
+                timeout=30,
+            )
+            r.raise_for_status()
+            f.write_bytes(r.content)
+        except Exception:
+            return None
+    return f"{cfg.public_base_url}/voice/audio/{key}.mp3"
+
+
+def say_or_play(text: str) -> str:
+    url = tts(text)
+    return f"<Play>{escape(url)}</Play>" if url else f"<Say>{escape(text)}</Say>"
+
+
+def twiml(inner: str) -> Response:
+    return Response(f'<?xml version="1.0" encoding="UTF-8"?><Response>{inner}</Response>',
+                    media_type="application/xml")
+
+
+def gather(prompt_xml: str) -> str:
+    return (f'<Gather input="speech" action="/voice/turn" method="POST" '
+            f'speechTimeout="auto" language="en-US">{prompt_xml}</Gather>'
+            f'{say_or_play("Are you still there?")}<Redirect>/voice/incoming</Redirect>')
+
+
+@router.get("/voice/audio/{name}")
+def audio(name: str):
+    f = AUDIO_DIR / Path(name).name
+    return FileResponse(f, media_type="audio/mpeg")
+
+
+@router.post("/voice/incoming")
+async def incoming(CallSid: str = Form(""), From: str = Form("")):
+    cfg = config()
+    passed, total = latest_pass_rate(cfg.run_id)
+    greeting = (f"Procurator speaking. The mesh stands at {passed} of {total or 25} "
+                f"acceptance criteria. What do you need?")
+    coll(EVENTS).insert_one({"run_id": cfg.run_id, "sprint": 0, "agent": "procurator",
+                             "kind": "voice.call", "text": f"inbound call from {From}",
+                             "data": {"call_sid": CallSid}, "created_at": _now()})
+    return twiml(gather(say_or_play(greeting)))
+
+
+@router.post("/voice/turn")
+async def turn(CallSid: str = Form(""), From: str = Form(""), SpeechResult: str = Form("")):
+    cfg = config()
+    heard = SpeechResult.strip()
+    if not heard:
+        return twiml(gather(say_or_play("I did not catch that. Say again?")))
+
+    # 1) the caller's words land on the bus — the mesh and dashboard see them live
+    coll(STAKEHOLDER_MSGS).insert_one({
+        "run_id": cfg.run_id, "from": "stakeholder", "channel": "voice",
+        "call_sid": CallSid, "caller": From, "text": heard, "sprint": 0,
+        "created_at": _now(),
+    })
+
+    # 2) PM answers from live state + the memory layer
+    memory, hits = recall_for_ticket(cfg.run_id, {"title": heard, "module": "", "description": heard})
+    prompt = (f"{_state_block(cfg.run_id)}\n{memory}\n\n"
+              f"CALL SO FAR:\n{_history(CallSid)}\n\nSTAKEHOLDER JUST SAID: {heard}")
+    try:
+        answer = ask("procurator-voice", PM_SYSTEM, prompt,
+                     model=cfg.procurator_model, max_tokens=200, retrieval_hits=hits)
+    except Exception:
+        answer = "I hit a snag pulling the ledger. The mesh is still running; try me again in a moment."
+    answer = " ".join(answer.split())
+    if len(answer) > 450:  # trim at a sentence boundary, never mid-word
+        cut = answer[:450]
+        answer = cut[:max(cut.rfind(". "), cut.rfind("! "), cut.rfind("? ")) + 1] or cut
+
+    coll(STAKEHOLDER_MSGS).insert_one({
+        "run_id": cfg.run_id, "from": "procurator", "channel": "voice",
+        "call_sid": CallSid, "text": answer, "sprint": 0, "created_at": _now(),
+    })
+    return twiml(gather(say_or_play(answer)))
+
+
+def call_stakeholder(summary: str) -> bool:
+    """Outbound: the PM rings the stakeholder (used at sprint close)."""
+    cfg = config()
+    if not (cfg.twilio_account_sid and cfg.stakeholder_phone and cfg.public_base_url):
+        return False
+    from twilio.rest import Client
+
+    text = f"Procurator calling with the sprint report. {summary} Goodbye."
+    inner = say_or_play(text)
+    Client(cfg.twilio_account_sid, cfg.twilio_auth_token).calls.create(
+        to=cfg.stakeholder_phone, from_=cfg.twilio_phone_number,
+        twiml=f"<Response>{inner}<Hangup/></Response>",
+    )
+    return True

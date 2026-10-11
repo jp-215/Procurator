@@ -24,6 +24,10 @@ from core.memory.provenance import provenance_chain
 from core.metrics import latest_pass_rate, tokens_spent
 
 app = FastAPI(title="Procurator Telemetry")
+
+from server.voice import router as voice_router  # noqa: E402
+
+app.include_router(voice_router)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET"], allow_headers=["*"])
 
 

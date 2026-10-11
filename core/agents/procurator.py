@@ -66,4 +66,13 @@ class Procurator(AgentBase):
             {"$set": {"ended_at": now(), "status": "done", "summary": final}},
         )
         self.log("sprint.done", f"sprint {sprint} closed", **final)
+        try:
+            from server.voice import call_stakeholder
+
+            summary = (f"Sprint {sprint} closed. {final['pass']} acceptance criteria passing. "
+                       f"{final['tokens']} tokens spent.")
+            if call_stakeholder(summary):
+                self.log("voice.outbound", "called the stakeholder with the standup")
+        except Exception:
+            pass
         return final

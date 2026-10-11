@@ -16,7 +16,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-TARGET_SRC = ROOT / "target" / "src"
 HIDDEN = ROOT / "hidden_tests"
 AC_RE = re.compile(r"test_ac(\d+)")
 
@@ -39,7 +38,9 @@ class GradeResult:
 
 def grade(src_dir: Path | None = None, timeout: int = 120) -> GradeResult:
     """Grade a source tree (default: target/src) against the hidden suite."""
-    src = Path(src_dir) if src_dir else TARGET_SRC
+    from core.paths import target_src
+
+    src = Path(src_dir) if src_dir else target_src()
     with tempfile.TemporaryDirectory(prefix="procurator-grade-") as tmp:
         tmpdir = Path(tmp)
         shutil.copytree(src, tmpdir / "src")

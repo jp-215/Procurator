@@ -14,8 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from core.config import config  # noqa: E402
 from core.db import ALL_COLLECTIONS, MANDATE, SPRINTS, STAKEHOLDER_MSGS, coll  # noqa: E402
 
-ROOT = Path(__file__).resolve().parent.parent
-SPEC = ROOT / "target" / "SPEC.md"
+from core.paths import spec_path  # noqa: E402
 
 
 def main() -> None:
@@ -28,7 +27,7 @@ def main() -> None:
             coll(name).delete_many({"meta.run_id": cfg.run_id})  # metrics ts
         print(f"wiped run_id={cfg.run_id}")
 
-    spec = SPEC.read_text()
+    spec = spec_path().read_text()
     coll(MANDATE).insert_one({
         "run_id": cfg.run_id, "version": 1, "spec": spec,
         "goal": "Implement ordersvc to satisfy all 25 acceptance criteria",

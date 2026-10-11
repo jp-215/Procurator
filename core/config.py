@@ -42,6 +42,19 @@ class Config:
 
     memory_enabled: bool = field(default_factory=lambda: _bool("MEMORY_ENABLED", True))
 
+    # Voice layer
+    twilio_account_sid: str = field(default_factory=lambda: os.environ.get("TWILIO_ACCOUNT_SID", ""))
+    twilio_auth_token: str = field(default_factory=lambda: os.environ.get("TWILIO_AUTH_TOKEN", ""))
+    twilio_phone_number: str = field(default_factory=lambda: os.environ.get("TWILIO_PHONE_NUMBER", ""))
+    stakeholder_phone: str = field(default_factory=lambda: os.environ.get("STAKEHOLDER_PHONE", ""))
+    elevenlabs_api_key: str = field(default_factory=lambda: os.environ.get("ELEVENLABS_API_KEY", ""))
+    elevenlabs_voice_id: str = field(default_factory=lambda: os.environ.get("ELEVENLABS_VOICE_ID", "JBFqnCBsd6RMkjVDRZzb"))
+    public_base_url: str = field(default_factory=lambda: os.environ.get("PUBLIC_BASE_URL", "").rstrip("/"))
+
+    # Mesh output repo
+    target_repo_dir: str = field(default_factory=lambda: os.environ.get("TARGET_REPO_DIR", ""))
+    target_repo_remote: str = field(default_factory=lambda: os.environ.get("TARGET_REPO_REMOTE", ""))
+
     # Identifies an end-to-end run; ablation gives each arm its own run_id.
     run_id: str = field(default_factory=lambda: os.environ.get("RUN_ID", "dev"))
 
