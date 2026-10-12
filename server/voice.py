@@ -132,9 +132,10 @@ async def incoming(CallSid: str = Form(""), From: str = Form("")):
     done = coll(TICKETS).count_documents({"run_id": run_id, "status": "done"})
     goal = (coll(MANDATE).find_one({"run_id": run_id}, sort=[("version", -1)]) or {}).get(
         "goal", "the orders service")
-    greeting = (f"Procurator speaking. We're building {goal}. "
-                f"{done} features have shipped and {passed} of {total or 25} acceptance "
-                f"criteria are verified passing. Ask me anything, or give me a directive.")
+    goal = goal[0].lower() + goal[1:] if goal else "the orders service"
+    greeting = (f"Procurator speaking. Our mandate: {goal}. "
+                f"{done} features shipped, {passed} of {total or 25} acceptance "
+                f"criteria verified passing. Ask me anything, or give me a directive.")
     coll(EVENTS).insert_one({"run_id": run_id, "sprint": 0, "agent": "procurator",
                              "kind": "voice.call", "text": f"inbound call from {From}",
                              "data": {"call_sid": CallSid}, "created_at": _now()})
